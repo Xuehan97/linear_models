@@ -1,0 +1,161 @@
+---
+title: "linear_models"
+author: "Xuehan Yang"
+date: "2021/11/16"
+output: github_document
+---
+
+```{r}
+library(tidyverse)
+library(p8105.datasets)
+
+set.seed(1)
+```
+
+## Model fitting
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    borough = neighbourhood_group,
+    neighborhood = neighbourhood) %>% 
+  filter(borough != "Staten Island") %>% 
+  select(price, stars, borough, neighborhood, room_type)
+```
+
+Visualizations
+
+```{r}
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price)) + geom_point()
+```
+
+Let's fit a linear model
+
+```{r}
+fit = lm(price ~ stars + borough, data = nyc_airbnb)
+```
+
+```{r}
+nyc_airbnb =
+  nyc_airbnb %>% 
+  mutate(
+    borough = fct_infreq(borough),
+    room_type = fct_infreq(room_type))
+
+fit = lm(price ~ stars + borough, data = nyc_airbnb)
+```
+
+## Tyding output
+
+```{r}
+summary(fit)
+summary(fit)$coef
+coef(fit)
+fitted.values(fit)
+```
+
+look at the coefficient table
+
+```{r}
+fit %>% 
+  broom::tidy()
+```
+
+```{r}
+fit %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  mutate(term = str_replace(term, "^borough", "Borough: ")) %>% 
+  knitr::kable(digits = 3)
+```
+
+## Diagnostic
+
+```{r}
+modelr::add_residuals(nyc_airbnb, fit)
+```
+
+```{r}
+nyc_airbnb %>% 
+  modelr::add_residuals(fit) %>% 
+  ggplot(aes(x = borough, y = resid)) + geom_violin()
+```
+
+```{r}
+nyc_airbnb %>% 
+  modelr::add_residuals(fit) %>% 
+  ggplot(aes(x = stars, y = resid)) + geom_point()
+```
+
+## different mocels
+
+```{r}
+fit = lm( price ~ stars*borough + room_type*borough, data = nyc_airbnb)
+
+broom::tidy(fit)
+```
+
+lets try nesting..
+
+```{r}
+nyc_airbnb %>% 
+  relocate(borough) %>% 
+  nest(data = price:room_type) %>% 
+  mutate(
+    models = map(.x = data, ~lm(price ~ stars +room_type, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(-data, -models) %>% 
+  unnest(results) %>% 
+  filter(term == "stars")
+```
+
+Look at neighborhoods in Manhattan...
+
+```{r}
+manhattan_lm_results_df =
+  nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  select(-borough) %>% 
+  relocate(neighborhood) %>% 
+  nest(data = price:room_type) %>% 
+  mutate(
+    lm_fits = map(.x = data, ~lm(price~stars+room_type, data = .x)),
+    lm_results = map(lm_fits, broom::tidy)
+  ) %>% 
+  select(neighborhood, lm_results) %>% 
+  unnest(lm_results)
+
+```
+
+```{r}
+manhattan_lm_results_df %>% 
+  filter(str_detect(term,"room_type")) %>% 
+  ggplot(aes(x = neighborhood, y = estimate)) +
+  geom_point() +
+  facet_grid(~term) +
+  theme(axis.text.x = element_text(angle = 80, hjust = 1))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
