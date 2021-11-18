@@ -12,42 +12,12 @@ way to compare the predictive performance of competing methods.
 
 ``` r
 library(tidyverse)
-```
-
-    ## -- Attaching packages --------------------------------------- tidyverse 1.3.1 --
-
-    ## v ggplot2 3.3.5     v purrr   0.3.4
-    ## v tibble  3.1.4     v dplyr   1.0.7
-    ## v tidyr   1.1.3     v stringr 1.4.0
-    ## v readr   2.0.1     v forcats 0.5.1
-
-    ## -- Conflicts ------------------------------------------ tidyverse_conflicts() --
-    ## x dplyr::filter() masks stats::filter()
-    ## x dplyr::lag()    masks stats::lag()
-
-``` r
 library(modelr)
 library(mgcv)
-```
-
-    ## 载入需要的程辑包：nlme
-
-    ## 
-    ## 载入程辑包：'nlme'
-
-    ## The following object is masked from 'package:dplyr':
-    ## 
-    ##     collapse
-
-    ## This is mgcv 1.8-38. For overview type 'help("mgcv-package")'.
-
-``` r
 library(viridis)
-```
 
-    ## 载入需要的程辑包：viridisLite
 
-``` r
+
 knitr::opts_chunk$set(
   fig.width = 6,
   fig.asp = .6,
@@ -224,3 +194,85 @@ cv_df %>%
 ```
 
 <img src="cross_validation_files/figure-gfm/unnamed-chunk-12-1.png" width="90%" />
+
+## Child growth data
+
+import data
+
+``` r
+child_growth_df = read_csv("cross_validation_files/nepalese_children.csv") %>% 
+  mutate(
+    weight_cp = (weight > 7)*(weight - 7)
+  )
+```
+
+``` r
+child_growth_df %>% 
+  ggplot(aes(x = weight, y = armc)) +
+  geom_point(alpha = .2)
+```
+
+<img src="cross_validation_files/figure-gfm/unnamed-chunk-14-1.png" width="90%" />
+
+consider candidate models.
+
+``` r
+linear_mod = lm(armc ~ weight, data = child_growth_df)
+pwl_mod    = lm(armc ~ weight + weight_cp, data = child_growth_df)
+smooth_mod = gam(armc ~ s(weight), data = child_growth_df)
+```
+
+``` r
+child_growth_df %>% 
+  add_predictions(linear_mod) %>% 
+  ggplot(aes(x = weight, y = armc)) +
+  geom_point(alpha = .2) +
+  geom_line(aes(y = pred), color = "red")
+```
+
+<img src="cross_validation_files/figure-gfm/unnamed-chunk-16-1.png" width="90%" />
+
+Use cv to compare models
+
+``` r
+cv_df = 
+  crossv_mc(child_growth_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+```
+
+Fit models and extract rmse
+
+``` r
+cv_df = 
+cv_df %>% 
+  mutate(
+    linear_mod = map(.x = train, ~lm(armc ~ weight, data = .x)),
+    pwl_mod    = map(.x = train, ~lm(armc ~ weight + weight_cp, data = .x)),
+    smooth_mod = map(.x = train, ~gam(armc ~ s(weight), data = .x))
+    ) %>% 
+  mutate(
+    rmse_linear = map2_dbl(.x = linear_mod, .y = test, ~rmse(data = .y, model = .x)),
+    rmse_smooth = map2_dbl(.x = smooth_mod, .y = test, ~rmse(data = .y, model = .x)),
+    rmse_pwl = map2_dbl(.x = pwl_mod, .y = test, ~rmse(data = .y, model = .x))
+  )
+```
+
+Look at RMSE distribution
+
+``` r
+cv_df %>% 
+  select(.id, starts_with("rmse")) %>% 
+  pivot_longer(
+    rmse_linear:rmse_pwl,
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_boxplot()
+```
+
+<img src="cross_validation_files/figure-gfm/unnamed-chunk-19-1.png" width="90%" />
