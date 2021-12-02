@@ -1,0 +1,249 @@
+---
+title: "bootstrapping"
+author: "Xuehan Yang"
+date: "2021/11/23"
+output: github_document
+---
+
+repeated sample 
+
+bootstrap is to mimic repeated sampling with the one sample you have.
+bootstrap sample has the same size as the original sample, and is drawn with replacement.
+
+```{r}
+library(tidyverse)
+library(p8105.datasets)
+
+set.seed(1)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+Bootstrapping in SLR
+
+```{r}
+n_samp = 250
+
+sim_df_const = 
+  tibble(
+    x = rnorm(n_samp, 1, 1),
+    error = rnorm(n_samp, 0, 1),
+    y = 2 + 3 * x + error
+  )
+
+sim_df_nonconst = sim_df_const %>% 
+  mutate(
+  error = error * .75 * x,
+  y = 2 + 3 * x + error
+)
+```
+
+One case in which the usual linear regression assumptions hold and one case in which they don’t. The plot below illustrates the differences between the dataset.
+
+```{r}
+sim_df = 
+  bind_rows(const = sim_df_const, nonconst = sim_df_nonconst, .id = "data_source") 
+
+sim_df %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point(alpha = .5) +
+  stat_smooth(method = "lm") +
+  facet_grid(~data_source)
+```
+
+
+```{r}
+lm(y ~ x, data = sim_df_const) %>% 
+  broom::tidy() %>% 
+  knitr::kable(digits = 3)
+```
+
+```{r}
+lm(y ~ x, data = sim_df_nonconst) %>% 
+  broom::tidy() %>% 
+  knitr::kable(digits = 3)
+```
+
+
+Lets try to use the bootstrap for inference
+
+```{r}
+bootstrap_sample =
+  sim_df_nonconst %>% 
+  sample_frac(size = 1, replace = TRUE) %>% 
+  arrange(x)
+
+lm(y~x, data = bootstrap_sample)
+```
+
+lets write a function
+
+```{r}
+boot_sample = function(df){
+  
+  sample_frac(df, size = 1, replace = TRUE)
+  
+}
+```
+
+```{r}
+boot_sample(sim_df_nonconst) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point(alpha = .5) +
+  stat_smooth(method = "lm")
+```
+
+Drawing many bootstrap samples
+
+```{r}
+boot_straps = 
+  data_frame(
+    strap_number = 1:1000,
+    strap_sample = rerun(1000, boot_sample(sim_df_nonconst))
+  )
+
+boot_straps
+```
+
+```{r}
+boot_straps %>% 
+  filter(strap_number %in% 1:2) %>% 
+  mutate(strap_sample = map(strap_sample, ~arrange(.x, x))) %>% 
+  pull(strap_sample)
+```
+
+```{r}
+boot_straps %>% 
+  filter(strap_number %in% 1:3) %>% 
+  unnest(strap_sample) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point(alpha = .5) +
+  stat_smooth(method = "lm", se = FALSE) +
+  facet_grid(~strap_number) 
+```
+
+Analyzing bootstrap samples
+
+```{r}
+bootstrap_results = 
+  boot_straps %>% 
+  mutate(
+    models = map(strap_sample, ~lm(y ~ x, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap_sample, -models) %>% 
+  unnest(results) 
+```
+
+```{r}
+bootstrap_results %>% 
+  group_by(term) %>% 
+  summarize(boot_se = sd(estimate)) %>% 
+  knitr::kable(digits = 3)
+```
+
+```{r}
+bootstrap_results %>% 
+  group_by(term) %>% 
+  summarize(
+    ci_lower = quantile(estimate, 0.025), 
+    ci_upper = quantile(estimate, 0.975))
+```
+
+```{r}
+boot_straps %>% 
+  unnest(strap_sample) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_line(aes(group = strap_number), stat = "smooth", method = "lm", se = FALSE, alpha = .1, color = "blue") +
+  geom_point(data = sim_df_nonconst, alpha = .5)
+```
+
+bootstrap
+
+```{r}
+boot_straps = 
+  sim_df_nonconst %>% 
+  modelr::bootstrap(n = 1000)
+
+boot_straps$strap[[1]]
+
+as_data_frame(boot_straps$strap[[1]])
+```
+
+```{r}
+sim_df_nonconst %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap, ~lm(y ~ x, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  group_by(term) %>% 
+  summarize(boot_se = sd(estimate))
+```
+
+```{r}
+sim_df_const %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(models = map(strap, ~lm(y ~ x, data = .x) ),
+         results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  group_by(term) %>% 
+  summarize(boot_se = sd(estimate))
+```
+
+Airbnb data
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    borough = neighbourhood_group,
+    neighborhood = neighbourhood) %>% 
+  filter(borough != "Staten Island") %>% 
+  drop_na(price, stars) %>% 
+  select(price, stars, borough, neighborhood, room_type)
+```
+
+```{r}
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price, color = room_type)) + 
+  geom_point()
+```
+
+```{r}
+nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap, ~ lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)) %>% 
+  select(results) %>% 
+  unnest(results) %>% 
+  filter(term == "stars") %>% 
+  ggplot(aes(x = estimate)) + geom_density()
+```
+
+
+
+
+
+
+
