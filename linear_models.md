@@ -52,20 +52,24 @@ nyc_airbnb %>%
 Let’s fit a linear model
 
 ``` r
-fit = lm(price ~ stars + borough, data = nyc_airbnb)
+fit = lm(data = nyc_airbnb, price ~ stars + borough)
 ```
+
+Being cirtical with factor
 
 ``` r
-nyc_airbnb =
-  nyc_airbnb %>% 
+nyc_airbnb = nyc_airbnb %>% 
   mutate(
     borough = fct_infreq(borough),
-    room_type = fct_infreq(room_type))
+    room_type = fct_infreq(room_type)
+  )
 
-fit = lm(price ~ stars + borough, data = nyc_airbnb)
+fit = lm(data = nyc_airbnb, price ~ stars + borough)
 ```
 
-## Tyding output
+## Tidying out
+
+output of lm is an object of class lm.
 
 ``` r
 summary(fit)
@@ -8841,7 +8845,19 @@ fitted.values(fit)
     ##      40484      40485      40489 
     ## 130.035279 102.741147 179.788907
 
-look at the coefficient table
+broom package has functions for obtaining a quick summary of the model
+and for the cleaning up the coefficient table. output is a table
+
+``` r
+fit %>% 
+  broom::glance()
+```
+
+    ## # A tibble: 1 x 12
+    ##   r.squared adj.r.squared sigma statistic   p.value    df   logLik    AIC    BIC
+    ##       <dbl>         <dbl> <dbl>     <dbl>     <dbl> <dbl>    <dbl>  <dbl>  <dbl>
+    ## 1    0.0342        0.0341  182.      271. 6.73e-229     4 -202113. 4.04e5 4.04e5
+    ## # ... with 3 more variables: deviance <dbl>, df.residual <int>, nobs <int>
 
 ``` r
 fit %>% 
@@ -8873,7 +8889,9 @@ fit %>%
 | Borough: Queens   |  -77.048 |   0.000 |
 | Borough: Bronx    |  -90.254 |   0.000 |
 
-## Diagnostic
+Diagnostics
+
+detect any failues in model assumptions
 
 ``` r
 modelr::add_residuals(nyc_airbnb, fit)
@@ -8895,100 +8913,226 @@ modelr::add_residuals(nyc_airbnb, fit)
     ## # ... with 40,482 more rows
 
 ``` r
+modelr::add_predictions(nyc_airbnb, fit)
+```
+
+    ## # A tibble: 40,492 x 6
+    ##    price stars borough neighborhood room_type        pred
+    ##    <dbl> <dbl> <fct>   <chr>        <fct>           <dbl>
+    ##  1    99   5   Bronx   City Island  Private room     89.5
+    ##  2   200  NA   Bronx   City Island  Private room     NA  
+    ##  3   300  NA   Bronx   City Island  Entire home/apt  NA  
+    ##  4   125   5   Bronx   City Island  Entire home/apt  89.5
+    ##  5    69   5   Bronx   City Island  Private room     89.5
+    ##  6   125   5   Bronx   City Island  Entire home/apt  89.5
+    ##  7    85   5   Bronx   City Island  Entire home/apt  89.5
+    ##  8    39   4.5 Bronx   Allerton     Private room     73.5
+    ##  9    95   5   Bronx   Allerton     Entire home/apt  89.5
+    ## 10   125   4.5 Bronx   Allerton     Entire home/apt  73.5
+    ## # ... with 40,482 more rows
+
+``` r
 nyc_airbnb %>% 
   modelr::add_residuals(fit) %>% 
-  ggplot(aes(x = borough, y = resid)) + geom_violin()
+  ggplot(aes(x = borough, y = resid)) +
+  geom_violin()
 ```
 
     ## Warning: Removed 9962 rows containing non-finite values (stat_ydensity).
 
-![](linear_models_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+![](linear_models_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
 
 ``` r
 nyc_airbnb %>% 
   modelr::add_residuals(fit) %>% 
-  ggplot(aes(x = stars, y = resid)) + geom_point()
+  ggplot(aes(x = stars, y = resid)) +
+  geom_point()
 ```
 
     ## Warning: Removed 9962 rows containing missing values (geom_point).
 
-![](linear_models_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+![](linear_models_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
 
-## different mocels
+## Hypothesis testing
 
 ``` r
-fit = lm( price ~ stars*borough + room_type*borough, data = nyc_airbnb)
-
-broom::tidy(fit)
+fit_null = lm(price ~ stars + borough, data = nyc_airbnb)
+fit_alt = lm(price ~ stars + borough + room_type, data = nyc_airbnb)
 ```
 
-    ## # A tibble: 16 x 5
-    ##    term                                  estimate std.error statistic  p.value
-    ##    <chr>                                    <dbl>     <dbl>     <dbl>    <dbl>
-    ##  1 (Intercept)                              95.7      19.2     4.99   6.13e- 7
-    ##  2 stars                                    27.1       3.96    6.84   8.20e-12
-    ##  3 boroughBrooklyn                         -26.1      25.1    -1.04   2.99e- 1
-    ##  4 boroughQueens                            -4.12     40.7    -0.101  9.19e- 1
-    ##  5 boroughBronx                             -5.63     77.8    -0.0723 9.42e- 1
-    ##  6 room_typePrivate room                  -124.        3.00  -41.5    0       
-    ##  7 room_typeShared room                   -154.        8.69  -17.7    1.42e-69
-    ##  8 stars:boroughBrooklyn                    -6.14      5.24   -1.17   2.41e- 1
-    ##  9 stars:boroughQueens                     -17.5       8.54   -2.04   4.09e- 2
-    ## 10 stars:boroughBronx                      -22.7      17.1    -1.33   1.85e- 1
-    ## 11 boroughBrooklyn:room_typePrivate room    32.0       4.33    7.39   1.55e-13
-    ## 12 boroughQueens:room_typePrivate room      54.9       7.46    7.37   1.81e-13
-    ## 13 boroughBronx:room_typePrivate room       71.3      18.0     3.96   7.54e- 5
-    ## 14 boroughBrooklyn:room_typeShared room     47.8      13.9     3.44   5.83e- 4
-    ## 15 boroughQueens:room_typeShared room       58.7      17.9     3.28   1.05e- 3
-    ## 16 boroughBronx:room_typeShared room        83.1      42.5     1.96   5.03e- 2
+``` r
+anova(fit_null, fit_alt) %>% 
+  broom::tidy()
+```
 
-lets try nesting..
+    ## # A tibble: 2 x 6
+    ##   res.df         rss    df     sumsq statistic p.value
+    ##    <dbl>       <dbl> <dbl>     <dbl>     <dbl>   <dbl>
+    ## 1  30525 1005601724.    NA       NA        NA       NA
+    ## 2  30523  921447496.     2 84154228.     1394.       0
+
+this anova is only used to assess nested model. For non-nested model,
+using cross-validatoin
+
+## Nesting data
+
+fitting models to datasets nested within variables.
 
 ``` r
 nyc_airbnb %>% 
-  relocate(borough) %>% 
-  nest(data = price:room_type) %>% 
+  lm(price ~ stars*borough + room_type*borough, data = .) %>% 
+  broom::tidy() %>% 
+  knitr::kable(digits = 3)
+```
+
+| term                                   | estimate | std.error | statistic | p.value |
+|:---------------------------------------|---------:|----------:|----------:|--------:|
+| (Intercept)                            |   95.694 |    19.184 |     4.988 |   0.000 |
+| stars                                  |   27.110 |     3.965 |     6.838 |   0.000 |
+| boroughBrooklyn                        |  -26.066 |    25.080 |    -1.039 |   0.299 |
+| boroughQueens                          |   -4.118 |    40.674 |    -0.101 |   0.919 |
+| boroughBronx                           |   -5.627 |    77.808 |    -0.072 |   0.942 |
+| room\_typePrivate room                 | -124.188 |     2.996 |   -41.457 |   0.000 |
+| room\_typeShared room                  | -153.635 |     8.692 |   -17.676 |   0.000 |
+| stars:boroughBrooklyn                  |   -6.139 |     5.237 |    -1.172 |   0.241 |
+| stars:boroughQueens                    |  -17.455 |     8.539 |    -2.044 |   0.041 |
+| stars:boroughBronx                     |  -22.664 |    17.099 |    -1.325 |   0.185 |
+| boroughBrooklyn:room\_typePrivate room |   31.965 |     4.328 |     7.386 |   0.000 |
+| boroughQueens:room\_typePrivate room   |   54.933 |     7.459 |     7.365 |   0.000 |
+| boroughBronx:room\_typePrivate room    |   71.273 |    18.002 |     3.959 |   0.000 |
+| boroughBrooklyn:room\_typeShared room  |   47.797 |    13.895 |     3.440 |   0.001 |
+| boroughQueens:room\_typeShared room    |   58.662 |    17.897 |     3.278 |   0.001 |
+| boroughBronx:room\_typeShared room     |   83.089 |    42.451 |     1.957 |   0.050 |
+
+``` r
+nest_lm_res = 
+  nyc_airbnb %>% 
+  nest(data = -borough) %>% 
   mutate(
-    models = map(.x = data, ~lm(price ~ stars +room_type, data = .x)),
+    models = map(data, ~lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(
+    -data, -models
+  ) %>% 
+  unnest(results)
+```
+
+the expected change in price comparing an entire apartment to a private
+room in Queens, for example, involves the main effect of room type and
+the Queens / private room interaction.
+
+``` r
+nest_lm_res %>% 
+  select(borough, term, estimate) %>% 
+  mutate(term = fct_infreq(term)) %>% 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) %>% 
+  knitr::kable(digits = 3)
+```
+
+| borough   | (Intercept) |  stars | room\_typePrivate room | room\_typeShared room |
+|:----------|------------:|-------:|-----------------------:|----------------------:|
+| Bronx     |      90.067 |  4.446 |                -52.915 |               -70.547 |
+| Queens    |      91.575 |  9.654 |                -69.255 |               -94.973 |
+| Brooklyn  |      69.627 | 20.971 |                -92.223 |              -105.839 |
+| Manhattan |      95.694 | 27.110 |               -124.188 |              -153.635 |
+
+``` r
+manhattan_airbnb = 
+  nyc_airbnb %>% 
+  filter(borough == "Manhattan")
+
+manhattan_nest_lm_res = 
+  manhattan_airbnb %>% 
+  nest(data = -neighborhood) %>%
+  mutate(
+    models = map(data, ~lm(price ~ stars + room_type, data = .x)),
     results = map(models, broom::tidy)
   ) %>% 
   select(-data, -models) %>% 
-  unnest(results) %>% 
-  filter(term == "stars")
-```
-
-    ## # A tibble: 4 x 6
-    ##   borough   term  estimate std.error statistic  p.value
-    ##   <fct>     <chr>    <dbl>     <dbl>     <dbl>    <dbl>
-    ## 1 Bronx     stars     4.45      3.35      1.33 1.85e- 1
-    ## 2 Queens    stars     9.65      5.45      1.77 7.65e- 2
-    ## 3 Brooklyn  stars    21.0       2.98      7.05 1.90e-12
-    ## 4 Manhattan stars    27.1       4.59      5.91 3.45e- 9
-
-Look at neighborhoods in Manhattan…
-
-``` r
-manhattan_lm_results_df =
-  nyc_airbnb %>% 
-  filter(borough == "Manhattan") %>% 
-  select(-borough) %>% 
-  relocate(neighborhood) %>% 
-  nest(data = price:room_type) %>% 
-  mutate(
-    lm_fits = map(.x = data, ~lm(price~stars+room_type, data = .x)),
-    lm_results = map(lm_fits, broom::tidy)
-  ) %>% 
-  select(neighborhood, lm_results) %>% 
-  unnest(lm_results)
+  unnest(results)
 ```
 
 ``` r
-manhattan_lm_results_df %>% 
-  filter(str_detect(term,"room_type")) %>% 
+manhattan_nest_lm_res %>%
+  filter(str_detect(term, "room_type")) %>% 
   ggplot(aes(x = neighborhood, y = estimate)) +
   geom_point() +
-  facet_grid(~term) +
+  facet_wrap(~term) +
   theme(axis.text.x = element_text(angle = 80, hjust = 1))
 ```
 
-![](linear_models_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+![](linear_models_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
+
+Binary Outcome–logistic regression
+
+``` r
+baltimore_df = 
+  read_csv("data/homicide-data.csv") %>% 
+  filter(city == "Baltimore") %>% 
+  mutate(
+    resolved = as.numeric(disposition == "Closed by arrest"),
+    victim_age = as.numeric(victim_age),
+    victim_race = fct_relevel(victim_race, "White")) %>% 
+  select(resolved, victim_age, victim_race, victim_sex)
+```
+
+    ## Rows: 52179 Columns: 12
+
+    ## -- Column specification --------------------------------------------------------
+    ## Delimiter: ","
+    ## chr (9): uid, victim_last, victim_first, victim_race, victim_age, victim_sex...
+    ## dbl (3): reported_date, lat, lon
+
+    ## 
+    ## i Use `spec()` to retrieve the full column specification for this data.
+    ## i Specify the column types or set `show_col_types = FALSE` to quiet this message.
+
+Fit a logistic regression
+
+``` r
+fit_logistic = baltimore_df %>% 
+  glm(resolved ~ victim_age + victim_race + victim_sex, data = ., family = binomial())
+```
+
+``` r
+fit_logistic %>% 
+  broom::tidy() %>% 
+  mutate(OR = exp(estimate)) %>% 
+  select(term, log_OR = estimate, OR, p.value) %>% 
+  knitr::kable(digits = 3)
+```
+
+| term                 | log\_OR |    OR | p.value |
+|:---------------------|--------:|------:|--------:|
+| (Intercept)          |   1.190 | 3.287 |   0.000 |
+| victim\_age          |  -0.007 | 0.993 |   0.027 |
+| victim\_raceAsian    |   0.296 | 1.345 |   0.653 |
+| victim\_raceBlack    |  -0.842 | 0.431 |   0.000 |
+| victim\_raceHispanic |  -0.265 | 0.767 |   0.402 |
+| victim\_raceOther    |  -0.768 | 0.464 |   0.385 |
+| victim\_sexMale      |  -0.880 | 0.415 |   0.000 |
+
+``` r
+baltimore_df %>% 
+  modelr::add_predictions(fit_logistic) %>% 
+  mutate(fitted_prob = boot::inv.logit(pred))
+```
+
+    ## # A tibble: 2,827 x 6
+    ##    resolved victim_age victim_race victim_sex    pred fitted_prob
+    ##       <dbl>      <dbl> <fct>       <chr>        <dbl>       <dbl>
+    ##  1        0         17 Black       Male       -0.654        0.342
+    ##  2        0         26 Black       Male       -0.720        0.327
+    ##  3        0         21 Black       Male       -0.683        0.335
+    ##  4        1         61 White       Male       -0.131        0.467
+    ##  5        1         46 Black       Male       -0.864        0.296
+    ##  6        1         27 Black       Male       -0.727        0.326
+    ##  7        1         21 Black       Male       -0.683        0.335
+    ##  8        1         16 Black       Male       -0.647        0.344
+    ##  9        1         21 Black       Male       -0.683        0.335
+    ## 10        1         44 Black       Female      0.0297       0.507
+    ## # ... with 2,817 more rows
