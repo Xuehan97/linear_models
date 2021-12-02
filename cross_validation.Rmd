@@ -32,37 +32,37 @@ scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 ```
 
-## CV "by hand", Simulate a dataset
+## CV "by hand"
 
-```{r, message=FALSE, warning=FALSE}
-set.seed(1)
+Simulate a dataset
 
-nonlin_df = tibble(
-  id = 1:100,
-  x  = runif(100, 0, 1),
-  y  = 1 - 10*(x - .3)^2 + rnorm(100, 0, .3)  
-)
+```{r}
+nonlin_df = 
+  tibble(
+    id = 1:100,
+    x = runif(100, 0, 1),
+    y = 1 - 10*(x - 0.3)^2 + rnorm(100, 0, 0.3)
+  )
 
 nonlin_df %>% 
-  ggplot(aes(x = x, y = y)) +
+  ggplot(aes(x = x, y = y)) + 
   geom_point()
 ```
 
-Create splits by hand, plot, fit models
+Anti_join to create training dataset.
 
-```{r,message=FALSE, warning=FALSE}
+```{r}
 train_df = sample_n(nonlin_df, 80)
 test_df = anti_join(nonlin_df, train_df, by = "id")
 
 ggplot(train_df, aes(x = x, y = y)) +
   geom_point() +
   geom_point(data = test_df, color = "red")
-
 ```
 
 Fit my models.
 
-```{r, message=FALSE, warning=FALSE}
+```{r}
 linear_mod = lm(y ~ x, data = train_df)
 smooth_mod = mgcv::gam(y ~ s(x), data = train_df)
 wiggly_mod = mgcv::gam(y ~ s(x, k = 30), sp = 10e-6, data = train_df)
@@ -70,31 +70,32 @@ wiggly_mod = mgcv::gam(y ~ s(x, k = 30), sp = 10e-6, data = train_df)
 
 Plot the results
 
-```{r,message=FALSE, warning=FALSE}
+```{r}
 train_df %>% 
   add_predictions(smooth_mod) %>% 
-  ggplot(aes(x = x, y = y)) +
-  geom_point() +
-  geom_line(aes(y = pred))
+  ggplot(aes(x = x, y = y)) + geom_point() +
+  geom_line(aes(y = pred), color = "red")
 ```
 
-```{r, message=FALSE, warning=FALSE}
+```{r}
 train_df %>% 
   add_predictions(wiggly_mod) %>% 
-  ggplot(aes(x = x, y = y)) +
-  geom_point() +
-  geom_line(aes(y = pred))
+  ggplot(aes(x = x, y = y)) + geom_point() +
+  geom_line(aes(y = pred), color = "red")
 ```
 
-```{r, message=FALSE, warning=FALSE}
+
+```{r}
 train_df %>% 
-  add_predictions(linear_mod) %>% 
+  gather_predictions(linear_mod, smooth_mod, wiggly_mod) %>% 
+  mutate(model = fct_inorder(model)) %>% 
   ggplot(aes(x = x, y = y)) +
   geom_point() +
-  geom_line(aes(y = pred))
+  geom_line(aes(y = pred), color = "red") +
+  facet_wrap(~model)
 ```
 
-quantify the results
+quantify the results using rmse
 
 ```{r, message=FALSE, warning=FALSE}
 rmse(linear_mod, test_df)
@@ -102,7 +103,7 @@ rmse(smooth_mod, test_df)
 rmse(wiggly_mod, test_df)
 ```
 
-## CV iteratively
+## CV using modelr
 
 USe `modelr::crossv_mc`
 
@@ -124,33 +125,33 @@ cv_df =
 
 lets fit models
 
-```{r, message=FALSE, warning=FALSE}
+```{r}
 cv_df = 
-cv_df %>% 
+  cv_df %>% mutate(
+    linear_mod = map(train, ~lm(y~x, data = .x)),
+    smooth_mod = map(train, ~mgcv::gam(y~s(x), data = .x)),
+    wiggly_mod = map(train, ~gam(y~s(x, k = 30), sp = 10e-6, data = .x))
+  ) %>% 
   mutate(
-    linear_mod = map(.x = train, ~lm(y ~ x, data = .x)),
-    smooth_mod = map(.x = train, ~gam(y ~ s(x), data = .x)),
-    wiggly_mod = map(.x = train, ~gam(y ~ s(x, k = 30), sp = 10e-6, data = .x))
-    ) %>% 
-  mutate(
-    rmse_linear = map2_dbl(.x = linear_mod, .y = test, ~rmse(data = .y, model = .x)),
-    rmse_smooth = map2_dbl(.x = smooth_mod, .y = test, ~rmse(data = .y, model = .x)),
-    rmse_wiggly = map2_dbl(.x = wiggly_mod, .y = test, ~rmse(data = .y, model = .x))
+    rmse_linear = map2(linear_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_smooth = map2(smooth_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_wiggly = map2(wiggly_mod, test, ~rmse(model = .x, data = .y))
   )
 ```
+
 
 Look at output
 ```{r, message=FALSE, warning=FALSE}
 cv_df %>% 
   select(starts_with("rmse")) %>% 
+  unnest() %>% 
   pivot_longer(
-    rmse_linear:rmse_wiggly,
-    names_to = "model",
+    everything(),
+    names_to = "model", 
     values_to = "rmse",
-    names_prefix = "rmse_"
-  ) %>% 
-  ggplot(aes(x = model, y = rmse)) +
-  geom_boxplot()
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_infreq(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
 
 ## Child growth data

@@ -35,25 +35,26 @@ scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 ```
 
-## CV “by hand”, Simulate a dataset
+## CV “by hand”
+
+Simulate a dataset
 
 ``` r
-set.seed(1)
-
-nonlin_df = tibble(
-  id = 1:100,
-  x  = runif(100, 0, 1),
-  y  = 1 - 10*(x - .3)^2 + rnorm(100, 0, .3)  
-)
+nonlin_df = 
+  tibble(
+    id = 1:100,
+    x = runif(100, 0, 1),
+    y = 1 - 10*(x - 0.3)^2 + rnorm(100, 0, 0.3)
+  )
 
 nonlin_df %>% 
-  ggplot(aes(x = x, y = y)) +
+  ggplot(aes(x = x, y = y)) + 
   geom_point()
 ```
 
 <img src="cross_validation_files/figure-gfm/unnamed-chunk-2-1.png" width="90%" />
 
-Create splits by hand, plot, fit models
+Anti\_join to create training dataset.
 
 ``` r
 train_df = sample_n(nonlin_df, 80)
@@ -79,9 +80,8 @@ Plot the results
 ``` r
 train_df %>% 
   add_predictions(smooth_mod) %>% 
-  ggplot(aes(x = x, y = y)) +
-  geom_point() +
-  geom_line(aes(y = pred))
+  ggplot(aes(x = x, y = y)) + geom_point() +
+  geom_line(aes(y = pred), color = "red")
 ```
 
 <img src="cross_validation_files/figure-gfm/unnamed-chunk-5-1.png" width="90%" />
@@ -89,44 +89,45 @@ train_df %>%
 ``` r
 train_df %>% 
   add_predictions(wiggly_mod) %>% 
-  ggplot(aes(x = x, y = y)) +
-  geom_point() +
-  geom_line(aes(y = pred))
+  ggplot(aes(x = x, y = y)) + geom_point() +
+  geom_line(aes(y = pred), color = "red")
 ```
 
 <img src="cross_validation_files/figure-gfm/unnamed-chunk-6-1.png" width="90%" />
 
 ``` r
 train_df %>% 
-  add_predictions(linear_mod) %>% 
+  gather_predictions(linear_mod, smooth_mod, wiggly_mod) %>% 
+  mutate(model = fct_inorder(model)) %>% 
   ggplot(aes(x = x, y = y)) +
   geom_point() +
-  geom_line(aes(y = pred))
+  geom_line(aes(y = pred), color = "red") +
+  facet_wrap(~model)
 ```
 
 <img src="cross_validation_files/figure-gfm/unnamed-chunk-7-1.png" width="90%" />
 
-quantify the results
+quantify the results using rmse
 
 ``` r
 rmse(linear_mod, test_df)
 ```
 
-    ## [1] 0.7052956
+    ## [1] 0.8199144
 
 ``` r
 rmse(smooth_mod, test_df)
 ```
 
-    ## [1] 0.2221774
+    ## [1] 0.3763496
 
 ``` r
 rmse(wiggly_mod, test_df)
 ```
 
-    ## [1] 0.289051
+    ## [1] 0.4530695
 
-## CV iteratively
+## CV using modelr
 
 USe `modelr::crossv_mc`
 
@@ -140,16 +141,16 @@ cv_df %>% pull(train) %>% .[[1]] %>% as_tibble()
     ## # A tibble: 79 x 3
     ##       id      x       y
     ##    <int>  <dbl>   <dbl>
-    ##  1     1 0.266   1.11  
-    ##  2     2 0.372   0.764 
-    ##  3     3 0.573   0.358 
-    ##  4     4 0.908  -3.04  
-    ##  5     6 0.898  -1.99  
-    ##  6     7 0.945  -3.27  
-    ##  7     8 0.661  -0.615 
-    ##  8     9 0.629   0.0878
-    ##  9    10 0.0618  0.392 
-    ## 10    11 0.206   1.63  
+    ##  1     1 0.0383  0.0341
+    ##  2     2 0.908  -2.73  
+    ##  3     3 0.0768  0.118 
+    ##  4     4 0.426   1.30  
+    ##  5     5 0.442   0.929 
+    ##  6     6 0.886  -2.25  
+    ##  7     7 0.430   0.324 
+    ##  8     8 0.499   0.338 
+    ##  9     9 0.440   0.581 
+    ## 10    10 0.306   1.01  
     ## # ... with 69 more rows
 
 ``` r
@@ -165,16 +166,15 @@ lets fit models
 
 ``` r
 cv_df = 
-cv_df %>% 
+  cv_df %>% mutate(
+    linear_mod = map(train, ~lm(y~x, data = .x)),
+    smooth_mod = map(train, ~mgcv::gam(y~s(x), data = .x)),
+    wiggly_mod = map(train, ~gam(y~s(x, k = 30), sp = 10e-6, data = .x))
+  ) %>% 
   mutate(
-    linear_mod = map(.x = train, ~lm(y ~ x, data = .x)),
-    smooth_mod = map(.x = train, ~gam(y ~ s(x), data = .x)),
-    wiggly_mod = map(.x = train, ~gam(y ~ s(x, k = 30), sp = 10e-6, data = .x))
-    ) %>% 
-  mutate(
-    rmse_linear = map2_dbl(.x = linear_mod, .y = test, ~rmse(data = .y, model = .x)),
-    rmse_smooth = map2_dbl(.x = smooth_mod, .y = test, ~rmse(data = .y, model = .x)),
-    rmse_wiggly = map2_dbl(.x = wiggly_mod, .y = test, ~rmse(data = .y, model = .x))
+    rmse_linear = map2(linear_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_smooth = map2(smooth_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_wiggly = map2(wiggly_mod, test, ~rmse(model = .x, data = .y))
   )
 ```
 
@@ -183,14 +183,14 @@ Look at output
 ``` r
 cv_df %>% 
   select(starts_with("rmse")) %>% 
+  unnest() %>% 
   pivot_longer(
-    rmse_linear:rmse_wiggly,
-    names_to = "model",
+    everything(),
+    names_to = "model", 
     values_to = "rmse",
-    names_prefix = "rmse_"
-  ) %>% 
-  ggplot(aes(x = model, y = rmse)) +
-  geom_boxplot()
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_infreq(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
 
 <img src="cross_validation_files/figure-gfm/unnamed-chunk-12-1.png" width="90%" />
